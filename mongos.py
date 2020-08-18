@@ -69,9 +69,7 @@ def getPacket_mongos(mongohost):
 def getPacket_rs(mongohost, item_key):
     host_key = mongohost.split('.')[0]
     res = run_command(mongohost, 'replSetGetStatus')
-    packet = []
-    packet.append(ZabbixMetric(zbhost, item_key + "[" + host_key + "]", int(res["myState"])))
-    return packet
+    return ZabbixMetric(zbhost, item_key + "[" + host_key + "]", int(res["myState"])), int(res["myState"])
 
 def sendLLD(url_hosts, item_key):
     print('Sending LLD to ' + item_key)
@@ -103,22 +101,35 @@ while True:
         t = ZabbixSender(zabbix_port = zbport, zabbix_server = zbserver).send(packet)
         print(t)
 
+    has_primary = 0
+    packet = []
     for mongoshardsvrhost in mongoshardsvrhosts:
         print("Running for " + mongoshardsvrhost.split('.')[0] + ": " + datetime.now().strftime("%H:%M:%S"))
-        packet = getPacket_rs(mongoshardsvrhost, "mongos_rs_state")
+        packet_response, mongo_state = getPacket_rs(mongoshardsvrhost, "mongos_rs_state")
+        packet.append(packet_response)
+        if mongo_state == 1:
+            has_primary = 1
 
-        # Send packet to Zabbix
-        t = ZabbixSender(zabbix_port = zbport, zabbix_server = zbserver).send(packet)
-        print(t)
+    packet.append(ZabbixMetric(zbhost, "has_primary", has_primary))
     
+    #Send packet to Zabbix
+    t = ZabbixSender(zabbix_port = zbport, zabbix_server = zbserver).send(packet)
+    print(t)
+
+    has_primary = 0
+    packet = []
     for mongoconfigsvrhost in mongoconfigsvrhosts:
         print("Running for " + mongoconfigsvrhost.split('.')[0] + ": " + datetime.now().strftime("%H:%M:%S"))
-        packet = getPacket_rs(mongoconfigsvrhost, "mongos_config_rs_state")
-        
-        # Send packet to Zabbix
-        t = ZabbixSender(zabbix_port = zbport, zabbix_server = zbserver).send(packet)
-        print(t)
+        packet_response, mongo_state = getPacket_rs(mongoconfigsvrhost, "mongos_config_rs_state")
+        packet.append(packet_response)
+        if mongo_state == 1:
+            has_primary = 1
 
+    packet.append(ZabbixMetric(zbhost, "has_primary_config", has_primary))
+    
+    # Send packet to Zabbix
+    t = ZabbixSender(zabbix_port = zbport, zabbix_server = zbserver).send(packet)
+    print(t)
 
     # Run every X Seconds
     time.sleep(run_every)
